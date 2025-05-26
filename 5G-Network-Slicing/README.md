@@ -47,7 +47,7 @@ To get started, you can clone the repository and set up your local environment. 
 3. Run the main simulation script:
 
     ```bash
-    python __main__.py
+    python run_demo.py
     ```
 
 ## 🧑‍💻 Project Structure
