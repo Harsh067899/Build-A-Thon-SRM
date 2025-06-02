@@ -9,7 +9,10 @@ from .Graph import Graph
 from .Slice import Slice
 from .Stats import Stats
 from .utils import format_bps, distance, KDTree
-from .network_graph import NetworkGraph
+try:
+    from .network_graph import NetworkGraphVisualization as NetworkGraph
+except ImportError:
+    NetworkGraph = None
 
 class Simulator:
     """Main simulator class for 5G network slicing"""

@@ -1,103 +1,107 @@
+# 5G Network Slicing Simulator with AI-Driven Resource Allocation
 
-# 5G Network Slicing Simulation
+This repository contains a 5G network slicing simulator with AI-driven resource allocation capabilities. The simulator is designed to demonstrate how machine learning can be used to optimize network slice resource allocation in 5G networks, compliant with 3GPP standards.
 
-Welcome to the **5G Network Slicing Simulation Project**! This repository contains a simulation framework designed to explore the concept of 5G network slicing, where multiple logical networks are created over a common physical infrastructure. The project leverages cutting-edge techniques to simulate the dynamic allocation of resources across different network slices, optimizing for various performance metrics.
+## Features
 
-## 📚 Project Overview
+- Simulation of 5G network slices with different service types (eMBB, URLLC, mMTC)
+- AI-driven resource allocation using LSTM and autoregressive models
+- Implementation of 3GPP standards for network slicing
+- Visualization of network performance metrics
+- Support for various traffic patterns and scenarios
 
-**5G Network Slicing** is a critical feature of next-generation wireless communication systems, enabling the partitioning of a physical network into multiple logical slices that cater to specific applications and performance requirements. This project simulates the deployment and management of network slices, evaluating performance under different configurations.
+## New Feature: Autoregressive LSTM Predictor
 
-The key objectives include:
+We've enhanced our AI capabilities with a new **Autoregressive LSTM Predictor** that provides multi-step forecasting for network slice resource allocation. This feature allows the system to predict optimal slice allocations for multiple future time steps, enabling more proactive resource management.
 
-- **Slice Creation & Management**: Dynamically generate and manage network slices with distinct characteristics.
-- **Resource Allocation**: Optimize resource distribution across slices for maximum efficiency.
-- **Performance Metrics**: Evaluate latency, throughput, and reliability for each slice.
+### Key Enhancements
 
-### Key Features
+1. **Multi-step Prediction**: Forecast slice allocations for multiple future time steps
+2. **Autoregressive Architecture**: Each prediction step feeds into the next for improved temporal coherence
+3. **Scenario-based Training**: Model trained on diverse network scenarios including baseline, emergency, smart city, and dynamic traffic patterns
+4. **Enhanced Slice Manager**: Integration with the slice management system for real-time allocation decisions
+5. **3GPP Standards Compliance**: Fully aligned with 3GPP TS 23.501 slice/service types and QoS parameters
 
-- 🛠 **Modular Architecture**: Built with Python and highly modular, allowing easy customization.
-- 📡 **5G Base Station Simulation**: Simulates 5G base stations interacting with clients and network slices.
-- ⚙️ **Dynamic Resource Allocation**: Adaptive allocation of bandwidth, frequency, and computational resources.
-- 📊 **Comprehensive Analytics**: Detailed performance metrics using real-time data from each slice.
+### Usage
 
-## 🚀 Getting Started
+To use the autoregressive LSTM predictor:
 
-To get started, you can clone the repository and set up your local environment. Ensure you have Python 3.8+ installed.
+```python
+from slicesim.ai.enhanced_lstm_predictor import AutoregressiveLSTMPredictor
 
-### Prerequisites
+# Create predictor
+predictor = AutoregressiveLSTMPredictor(
+    input_dim=11,
+    sequence_length=10,
+    out_steps=5
+)
 
-- Python 3.8 or higher
-- Dependencies listed in `requirements.txt` (install with `pip install -r requirements.txt`)
+# Make multi-step predictions
+predictions = predictor.predict(input_sequence, return_all_steps=True)
+```
 
-### Installation
+To use the enhanced slice manager:
 
-1. Clone the repository:
+```python
+from slicesim.ai.slice_manager import EnhancedSliceManager
 
-    ```bash
-    git clone https://github.com/rohan-chandrashekar/5g-network-slicing-simulation.git
-    cd 5g-network-slicing-simulation
-    ```
+# Create slice manager
+slice_manager = EnhancedSliceManager(
+    input_dim=11,
+    sequence_length=10,
+    out_steps=5
+)
 
-2. Install the necessary dependencies:
+# Get optimal slice allocation
+allocation = slice_manager.get_optimal_slice_allocation(current_state)
+```
 
-    ```bash
-    pip install -r requirements.txt
-    ```
+### Demo Script
 
-3. Run the main simulation script:
+We've included a demo script to showcase the capabilities of the autoregressive LSTM predictor:
 
-    ```bash
-    python __main__.py
-    ```
+```bash
+python -m slicesim.ai.demo_enhanced_lstm --show_plots --demo_slice_manager
+```
 
-## 🧑‍💻 Project Structure
+Options:
+- `--input_dim`: Dimension of input features (default: 11)
+- `--sequence_length`: Length of input sequence (default: 10)
+- `--out_steps`: Number of future steps to predict (default: 5)
+- `--num_samples`: Number of training samples to generate (default: 10000)
+- `--epochs`: Number of training epochs (default: 100)
+- `--batch_size`: Batch size for training (default: 64)
+- `--output_dir`: Directory to save output files (default: 'output')
+- `--retrain`: Retrain the model even if a saved model exists
+- `--show_plots`: Show plots during execution
+- `--demo_slice_manager`: Demo the enhanced slice manager
 
-Here's a breakdown of the main files and their roles:
+## Installation
 
-- **`BaseStation.py`**: Manages the simulation of 5G base stations and their interactions with clients.
-- **`Client.py`**: Defines the behavior of clients requesting services from the network slices.
-- **`Container.py`**: Manages containerized applications running within network slices.
-- **`Coverage.py`**: Handles the simulation of coverage areas and signal strength.
-- **`Distributor.py`**: Manages the distribution of resources across slices.
-- **`Graph.py`**: Generates visual representations of network performance.
-- **`Slice.py`**: Implements the core functionality of network slices, including creation and management.
-- **`Stats.py`**: Collects and analyzes performance data.
-- **`utils.py`**: Utility functions used across the project.
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/5G-Network-Slicing.git
+cd 5G-Network-Slicing
 
-## 🌐 Network Slicing
+# Install dependencies
+pip install -r requirements.txt
+```
 
-In 5G, **network slicing** allows the creation of isolated virtual networks tailored for different use cases like:
+## Requirements
 
-- **eMBB (Enhanced Mobile Broadband)**: High-speed internet for applications like VR/AR.
-- **mMTC (Massive Machine-Type Communications)**: Supports IoT with low power and high device density.
-- **URLLC (Ultra-Reliable Low Latency Communications)**: For mission-critical applications like remote surgery.
+- Python 3.7+
+- TensorFlow 2.4+
+- NumPy
+- Matplotlib
+- Pandas
+- scikit-learn
 
-This simulation models each of these slices, providing an environment to explore how resources are allocated to meet the requirements of each slice.
+## License
 
-## 📊 Performance Metrics
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-The simulation focuses on several key performance indicators:
+## Acknowledgements
 
-- **Latency**: Measures delay in data transmission.
-- **Throughput**: Tracks the rate of successful message delivery over the network.
-- **Resource Utilization**: Assesses how efficiently the network resources are allocated to different slices.
-
-## 🛠 Future Work
-
-Some potential areas of improvement and further exploration include:
-
-- 🧠 **AI-Driven Resource Allocation**: Use AI to optimize resource distribution.
-- 🌐 **Multi-Access Edge Computing (MEC)**: Explore edge computing to reduce latency further.
-- 🚀 **Scalability**: Enhance the scalability to simulate larger and more complex network environments.
-
-## 🤝 Contributing
-
-Contributions are welcome! If you're interested in improving this project, feel free to fork the repository, make changes, and submit a pull request. For major changes, please open an issue first to discuss what you'd like to change.
-
-### Steps to Contribute:
-
-1. Fork the project.
-2. Create your feature branch (`git checkout -b feature/awesome-feature`).
-3. Commit your changes (`git commit -m 'Add awesome feature'`).
-4. Push to the branch (`git push origin feature/awesome-feature`).
-5. Open a pull request.
+- 3GPP for the network slicing standards
+- TensorFlow team for the machine learning framework
+- Context7 for the autoregressive LSTM implementation insights
