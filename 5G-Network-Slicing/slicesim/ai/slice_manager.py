@@ -1,385 +1,583 @@
 #!/usr/bin/env python3
 """
-Enhanced Network Slice Manager with Autoregressive LSTM Predictor
+5G Network Slicing - Slice Manager Module
 
-This module provides an enhanced slice manager that uses the autoregressive LSTM
-predictor to make multi-step predictions for optimal slice resource allocation.
-
-3GPP Standards Compliance:
-- Implements slice types according to 3GPP TS 23.501 (SST values)
-- Supports QoS parameters defined in 3GPP TS 23.501 Section 5.7
-- Aligns with Network Slice Selection Assistance Information (NSSAI) concept
+This module implements base and enhanced slice managers for the 5G network slicing system.
+The slice managers are responsible for allocating resources to different network slices
+based on various strategies, from static allocation to ML-based dynamic allocation.
 """
 
-import numpy as np
 import os
-from datetime import datetime
+import numpy as np
 import logging
-
-# Import the autoregressive LSTM predictor
-from slicesim.ai.enhanced_lstm_predictor import AutoregressiveLSTMPredictor
-from slicesim.ai.lstm_predictor import SliceAllocationPredictor
+import time
+from datetime import datetime
+import json
+import matplotlib.pyplot as plt
+from threading import Lock
+import tensorflow as tf
+from sklearn.preprocessing import MinMaxScaler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Base SliceManager class
-class SliceManager:
-    """Base Network Slice Manager
+class BaseSliceManager:
+    """
+    Base class for slice managers.
     
-    This class provides the foundation for network slice management
-    using the LSTM predictor.
-    
-    3GPP Compliance:
-    - SST=1: eMBB (Enhanced Mobile Broadband)
-    - SST=2: URLLC (Ultra Reliable Low Latency Communications)
-    - SST=3: mMTC (Massive Machine Type Communications)
-    
-    Where SST is Slice/Service Type as defined in 3GPP TS 23.501
+    This class implements basic slice management functionality and static allocation.
     """
     
-    def __init__(self, input_dim=11, sequence_length=10, model_path=None, skip_training=False):
-        """Initialize the slice manager
-        
-        Args:
-            input_dim (int): Dimension of input features
-            sequence_length (int): Length of input sequence
-            model_path (str): Path to load the model from
-            skip_training (bool): Whether to skip training during initialization
+    def __init__(self, config_path=None):
         """
-        self.input_dim = input_dim
-        self.sequence_length = sequence_length
-        self.model_path = model_path
-        
-        # Initialize the predictor
-        logger.info("Initializing LSTM predictor...")
-        self.predictor = SliceAllocationPredictor(
-            input_dim=input_dim,
-            sequence_length=sequence_length,
-            model_path=model_path,
-            skip_training=skip_training
-        )
-        
-        # Initialize history buffer
-        self.history_buffer = []
-        
-        logger.info("Slice manager initialized successfully")
-    
-    def update_history_buffer(self, current_state):
-        """Update the history buffer with the current state
+        Initialize the slice manager.
         
         Args:
-            current_state (numpy.ndarray): Current state vector
+            config_path (str): Path to the configuration file
         """
-        # Add current state to history buffer
-        self.history_buffer.append(current_state)
+        # Default configuration
+        self.config = {
+            'slice_types': ['embb', 'urllc', 'mmtc'],
+            'static_allocation': {
+                'embb': 0.4,
+                'urllc': 0.3,
+                'mmtc': 0.3
+            },
+            'qos_thresholds': {
+                'embb': 1.5,
+                'urllc': 1.2,
+                'mmtc': 1.8
+            },
+            'emergency_allocation': {
+                'embb': 0.3,
+                'urllc': 0.6,
+                'mmtc': 0.1
+            }
+        }
         
-        # Keep only the last sequence_length states
-        if len(self.history_buffer) > self.sequence_length:
-            self.history_buffer.pop(0)
+        # Load configuration if provided
+        if config_path and os.path.exists(config_path):
+            self._load_config(config_path)
+        
+        # Initialize state
+        self.current_allocation = np.array([
+            self.config['static_allocation']['embb'],
+            self.config['static_allocation']['urllc'],
+            self.config['static_allocation']['mmtc']
+        ])
+        
+        self.current_utilization = np.zeros(3)
+        self.is_emergency = False
+        self.lock = Lock()
+        
+        logger.info("Base slice manager initialized")
     
-    def get_optimal_slice_allocation(self, current_state):
-        """Get optimal slice allocation based on current state
+    def _load_config(self, config_path):
+        """
+        Load configuration from file.
         
         Args:
-            current_state (numpy.ndarray): Current state vector
-            
+            config_path (str): Path to the configuration file
+        """
+        try:
+            with open(config_path, 'r') as f:
+                loaded_config = json.load(f)
+                # Update config with loaded values
+                for key, value in loaded_config.items():
+                    self.config[key] = value
+            logger.info(f"Configuration loaded from {config_path}")
+        except Exception as e:
+            logger.error(f"Error loading configuration: {e}")
+    
+    def allocate_resources(self, traffic_load, utilization=None):
+        """
+        Allocate resources based on the current strategy.
+        
+        Args:
+            traffic_load (float): Current traffic load
+            utilization (numpy.ndarray): Current utilization of slices
+        
         Returns:
-            numpy.ndarray: Optimal slice allocation
+            numpy.ndarray: Resource allocation for each slice
         """
-        # Update history buffer
-        self.update_history_buffer(current_state)
-        
-        # If we don't have enough history, use default allocation
-        if len(self.history_buffer) < self.sequence_length:
-            logger.info(f"Not enough history ({len(self.history_buffer)}/{self.sequence_length}), using default allocation")
-            # Default allocation: equal distribution
-            return np.array([1/3, 1/3, 1/3])
-        
-        # Convert history buffer to numpy array
-        input_sequence = np.array(self.history_buffer)
-        
-        # Get prediction from LSTM model
-        prediction = self.predictor.predict(input_sequence)
-        
-        # Safe logging that handles numpy arrays correctly
-        embb = prediction[0].item() if hasattr(prediction[0], 'item') else float(prediction[0])
-        urllc = prediction[1].item() if hasattr(prediction[1], 'item') else float(prediction[1])
-        mmtc = prediction[2].item() if hasattr(prediction[2], 'item') else float(prediction[2])
-        logger.info(f"Predicted allocation: eMBB={embb:.2f}, URLLC={urllc:.2f}, mMTC={mmtc:.2f}")
-        
-        return prediction
+        with self.lock:
+            # Base implementation uses static allocation
+            if self.is_emergency:
+                # Use emergency allocation during emergencies
+                allocation = np.array([
+                    self.config['emergency_allocation']['embb'],
+                    self.config['emergency_allocation']['urllc'],
+                    self.config['emergency_allocation']['mmtc']
+                ])
+            else:
+                # Use static allocation normally
+                allocation = np.array([
+                    self.config['static_allocation']['embb'],
+                    self.config['static_allocation']['urllc'],
+                    self.config['static_allocation']['mmtc']
+                ])
+            
+            # Update current allocation
+            self.current_allocation = allocation
+            
+            # Update utilization if provided
+            if utilization is not None:
+                self.current_utilization = utilization
+            
+            return allocation
     
-    def train_model(self, training_data=None, epochs=150, batch_size=64, validation_split=0.2):
-        """Train the LSTM model
+    def set_emergency_mode(self, is_emergency):
+        """
+        Set emergency mode.
         
         Args:
-            training_data (tuple): Training data (X, y)
-            epochs (int): Number of training epochs
-            batch_size (int): Batch size
-            validation_split (float): Validation split ratio
-            
-        Returns:
-            keras.callbacks.History: Training history
+            is_emergency (bool): Whether there's an emergency
         """
-        if training_data is None:
-            # Generate synthetic training data
-            logger.info("Generating synthetic training data...")
-            X_train, y_train, X_val, y_val = self.predictor._generate_training_data(15000)
-            training_data = (X_train, y_train)
-            validation_data = (X_val, y_val)
+        with self.lock:
+            self.is_emergency = is_emergency
+        logger.info(f"Emergency mode set to {is_emergency}")
+    
+    def get_current_allocation(self):
+        """
+        Get current slice allocation.
+        
+        Returns:
+            numpy.ndarray: Current allocation
+        """
+        with self.lock:
+            return self.current_allocation.copy()
+    
+    def get_current_utilization(self):
+        """
+        Get current slice utilization.
+        
+        Returns:
+            numpy.ndarray: Current utilization
+        """
+        with self.lock:
+            return self.current_utilization.copy()
+    
+    def visualize_allocation(self, output_path=None):
+        """
+        Visualize current allocation.
+        
+        Args:
+            output_path (str): Path to save visualization
+        """
+        # Create figure
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Plot allocation
+        slice_types = ['eMBB', 'URLLC', 'mMTC']
+        colors = ['#FF6B6B', '#45B7D1', '#FFBE0B']
+        
+        # Allocation pie chart
+        ax1.pie(self.current_allocation, labels=slice_types, colors=colors, autopct='%1.1f%%',
+               shadow=True, startangle=90)
+        ax1.axis('equal')
+        ax1.set_title('Current Slice Allocation')
+        
+        # Utilization bar chart
+        ax2.bar(slice_types, self.current_utilization, color=colors)
+        
+        # Add threshold lines
+        thresholds = [
+            self.config['qos_thresholds']['embb'],
+            self.config['qos_thresholds']['urllc'],
+            self.config['qos_thresholds']['mmtc']
+        ]
+        
+        for i, threshold in enumerate(thresholds):
+            ax2.axhline(y=threshold, xmin=i/3, xmax=(i+1)/3, 
+                       color=colors[i], linestyle='--', alpha=0.7)
+        
+        ax2.set_title('Current Slice Utilization')
+        ax2.set_ylabel('Utilization')
+        ax2.grid(axis='y', linestyle='--', alpha=0.7)
+        
+        # Add emergency indicator
+        if self.is_emergency:
+            fig.suptitle("Network Status: Emergency", fontsize=16)
         else:
-            X, y = training_data
-            # Split into training and validation sets
-            split_idx = int((1 - validation_split) * len(X))
-            X_train, X_val = X[:split_idx], X[split_idx:]
-            y_train, y_val = y[:split_idx], y[split_idx:]
-            validation_data = (X_val, y_val)
+            fig.suptitle("Network Status: Normal", fontsize=16)
         
-        # Train model
-        logger.info("Training LSTM model...")
-        history = self.predictor.train(
-            X_train, y_train,
-            epochs=epochs,
-            batch_size=batch_size,
-            validation_data=validation_data
-        )
+        plt.tight_layout()
         
-        # Log training results
-        val_loss = history.history['val_loss'][-1]
-        val_mae = history.history['val_mae'][-1]
-        logger.info(f"Training completed. Validation Loss: {val_loss:.4f}, Validation MAE: {val_mae:.4f}")
-        
-        return history
-    
-    def save_model(self, path=None):
-        """Save the LSTM model
-        
-        Args:
-            path (str): Path to save the model
-        """
-        if path is None:
-            path = f"models/lstm_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.h5"
-        
-        self.predictor.save(path)
-        logger.info(f"Model saved to {path}")
+        # Save or show
+        if output_path:
+            plt.savefig(output_path)
+            plt.close()
+        else:
+            plt.show()
 
 
-class EnhancedSliceManager(SliceManager):
-    """Enhanced Network Slice Manager with Autoregressive LSTM Predictor
-    
-    This class extends the base SliceManager with multi-step prediction capabilities
-    using the autoregressive LSTM model from Context7 insights.
-    
-    3GPP Compliance:
-    - SST=1: eMBB (Enhanced Mobile Broadband)
-    - SST=2: URLLC (Ultra Reliable Low Latency Communications)
-    - SST=3: mMTC (Massive Machine Type Communications)
-    
-    Where SST is Slice/Service Type as defined in 3GPP TS 23.501
+class ProportionalSliceManager(BaseSliceManager):
+    """
+    Proportional slice manager that allocates resources based on utilization.
     """
     
-    def __init__(self, input_dim=11, sequence_length=10, out_steps=5, model_path=None, 
-                 checkpoint_dir="models/checkpoints", skip_training=False):
-        """Initialize the enhanced slice manager
-        
-        Args:
-            input_dim (int): Dimension of input features
-            sequence_length (int): Length of input sequence
-            out_steps (int): Number of future steps to predict
-            model_path (str): Path to load the model from
-            checkpoint_dir (str): Directory to save model checkpoints
-            skip_training (bool): Whether to skip training during initialization
+    def allocate_resources(self, traffic_load, utilization):
         """
-        # Initialize the parent class
-        super().__init__(input_dim, sequence_length, model_path, skip_training)
-        
-        # Override the predictor with our autoregressive model
-        self.out_steps = out_steps
-        self.checkpoint_dir = checkpoint_dir
-        
-        # Create directory for checkpoints if it doesn't exist
-        os.makedirs(checkpoint_dir, exist_ok=True)
-        
-        # Initialize the autoregressive predictor
-        logger.info("Initializing autoregressive LSTM predictor...")
-        self.predictor = AutoregressiveLSTMPredictor(
-            input_dim=input_dim,
-            sequence_length=sequence_length,
-            out_steps=out_steps,
-            model_path=model_path,
-            skip_training=skip_training
-        )
-        
-        # Initialize history buffer for input sequences
-        self.history_buffer = []
-        
-        # Initialize prediction history for visualization and analysis
-        self.prediction_history = []
-        
-        logger.info("Enhanced slice manager initialized successfully")
-    
-    def get_optimal_slice_allocation(self, current_state, return_all_steps=False):
-        """Get optimal slice allocation based on current state
-        
-        This method uses the autoregressive LSTM predictor to predict optimal
-        slice allocation for future steps.
+        Allocate resources proportionally to utilization.
         
         Args:
-            current_state (numpy.ndarray): Current state vector
-            return_all_steps (bool): Whether to return all predicted steps
-            
+            traffic_load (float): Current traffic load
+            utilization (numpy.ndarray): Current utilization of slices
+        
         Returns:
-            numpy.ndarray: Optimal slice allocation(s)
+            numpy.ndarray: Resource allocation for each slice
         """
-        # Update history buffer
-        self.update_history_buffer(current_state)
-        
-        # If we don't have enough history, use the base class implementation
-        if len(self.history_buffer) < self.sequence_length:
-            logger.info(f"Not enough history ({len(self.history_buffer)}/{self.sequence_length}), using default allocation")
-            # Default allocation: equal distribution
-            return np.array([1/3, 1/3, 1/3])
-        
-        # Convert history buffer to numpy array
-        input_sequence = np.array(self.history_buffer)
-        
-        # Get prediction from autoregressive LSTM model
-        prediction = self.predictor.predict(input_sequence, return_all_steps=return_all_steps)
-        
-        # Store prediction for analysis
-        self.prediction_history.append(prediction if return_all_steps else np.array([prediction]))
-        
-        # Log prediction
-        if return_all_steps:
-            # For multi-step predictions, just log the shape
-            logger.info(f"Multi-step prediction shape: {prediction.shape}")
-        else:
-            # Safe logging that handles numpy arrays correctly
-            embb = prediction[0].item() if hasattr(prediction[0], 'item') else float(prediction[0])
-            urllc = prediction[1].item() if hasattr(prediction[1], 'item') else float(prediction[1])
-            mmtc = prediction[2].item() if hasattr(prediction[2], 'item') else float(prediction[2])
-            logger.info(f"Predicted allocation: eMBB={embb:.2f}, URLLC={urllc:.2f}, mMTC={mmtc:.2f}")
-        
-        return prediction
-    
-    def train_model(self, training_data=None, epochs=150, batch_size=64, validation_split=0.2):
-        """Train the autoregressive LSTM model
-        
-        Args:
-            training_data (tuple): Training data (X, y)
-            epochs (int): Number of training epochs
-            batch_size (int): Batch size
-            validation_split (float): Validation split ratio
+        with self.lock:
+            # Update utilization
+            self.current_utilization = utilization.copy()
             
-        Returns:
-            keras.callbacks.History: Training history
-        """
-        if training_data is None:
-            # Generate synthetic training data
-            logger.info("Generating synthetic training data...")
-            X_train, y_train, X_val, y_val = self.predictor._generate_training_data(15000)
-        else:
-            X, y = training_data
-            # Split into training and validation sets
-            split_idx = int((1 - validation_split) * len(X))
-            X_train, X_val = X[:split_idx], X[split_idx:]
-            y_train, y_val = y[:split_idx], y[split_idx:]
-        
-        # Train model
-        logger.info("Training autoregressive LSTM model...")
-        history = self.predictor.train(
-            X_train, y_train,
-            epochs=epochs,
-            batch_size=batch_size,
-            validation_data=(X_val, y_val),
-            checkpoint_dir=self.checkpoint_dir
-        )
-        
-        # Log training results
-        val_loss = history.history['val_loss'][-1]
-        val_mae = history.history['val_mae'][-1]
-        logger.info(f"Training completed. Validation Loss: {val_loss:.4f}, Validation MAE: {val_mae:.4f}")
-        
-        return history
-    
-    def save_model(self, path=None):
-        """Save the autoregressive LSTM model
-        
-        Args:
-            path (str): Path to save the model
-        """
-        if path is None:
-            path = os.path.join(self.checkpoint_dir, f"autoregressive_lstm_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}.h5")
-        
-        self.predictor.save(path)
-        logger.info(f"Model saved to {path}")
-    
-    def evaluate_model(self, test_data):
-        """Evaluate the autoregressive LSTM model
-        
-        Args:
-            test_data (tuple): Test data (X, y)
+            if self.is_emergency:
+                # Use emergency allocation during emergencies
+                allocation = np.array([
+                    self.config['emergency_allocation']['embb'],
+                    self.config['emergency_allocation']['urllc'],
+                    self.config['emergency_allocation']['mmtc']
+                ])
+            else:
+                # Calculate allocation proportional to utilization
+                total_util = np.sum(utilization)
+                if total_util > 0:
+                    # Normalize utilization
+                    allocation = utilization / total_util
+                else:
+                    # If total utilization is 0, use static allocation
+                    allocation = np.array([
+                        self.config['static_allocation']['embb'],
+                        self.config['static_allocation']['urllc'],
+                        self.config['static_allocation']['mmtc']
+                    ])
             
-        Returns:
-            tuple: (loss, mae)
-        """
-        X_test, y_test = test_data
-        
-        # Evaluate model
-        loss, mae = self.predictor.evaluate(X_test, y_test)
-        
-        logger.info(f"Model evaluation: Loss={loss:.4f}, MAE={mae:.4f}")
-        
-        return loss, mae
+            # Ensure allocations are within valid range
+            allocation = np.clip(allocation, 0.1, 0.8)
+            
+            # Normalize to sum to 1
+            allocation = allocation / np.sum(allocation)
+            
+            # Update current allocation
+            self.current_allocation = allocation
+            
+            return allocation
+
+
+class EnhancedSliceManager(BaseSliceManager):
+    """
+    Enhanced slice manager that uses ML model for allocation decisions.
+    """
     
-    def visualize_predictions(self, input_sequence=None, actual_future=None):
-        """Visualize predictions
+    def __init__(self, model_path=None, config_path=None):
+        """
+        Initialize the enhanced slice manager.
         
         Args:
-            input_sequence (numpy.ndarray): Input sequence
-            actual_future (numpy.ndarray): Actual future values
+            model_path (str): Path to the trained model
+            config_path (str): Path to the configuration file
         """
-        if input_sequence is None and len(self.history_buffer) >= self.sequence_length:
-            # Use history buffer as input sequence
-            input_sequence = np.array(self.history_buffer)
+        super().__init__(config_path)
         
-        if input_sequence is not None:
-            self.predictor.plot_predictions(input_sequence, actual_future)
-        else:
-            logger.warning("No input sequence available for visualization")
+        # Additional configuration
+        self.config.update({
+            'sequence_length': 10,
+            'stability_factor': 0.7,
+            'feature_names': [
+                'traffic_load', 'hour_of_day', 'day_of_week',
+                'embb_allocation', 'urllc_allocation', 'mmtc_allocation',
+                'embb_utilization', 'urllc_utilization', 'mmtc_utilization',
+                'client_count', 'bs_count'
+            ]
+        })
+        
+        # Load configuration if provided
+        if config_path and os.path.exists(config_path):
+            self._load_config(config_path)
+        
+        # Initialize ML components
+        self.model = None
+        self.scaler = None
+        self.history = []
+        self.is_multi_step = False
+        self.out_steps = 1
+        
+        # Load model if provided
+        if model_path:
+            self.load_model(model_path)
+        
+        logger.info("Enhanced slice manager initialized")
+    
+    def load_model(self, model_path):
+        """
+        Load the trained model and scaler.
+        
+        Args:
+            model_path (str): Path to the model directory
+        
+        Returns:
+            bool: Whether the model was loaded successfully
+        """
+        try:
+            # Load model
+            self.model = tf.keras.models.load_model(os.path.join(model_path, 'final_model.h5'))
+            logger.info(f"Model loaded from {model_path}")
+            
+            # Load scaler parameters
+            scaler_path = os.path.join(model_path, 'X_scaler.npy')
+            if os.path.exists(scaler_path):
+                scaler_params = np.load(scaler_path, allow_pickle=True)
+                self.scaler = MinMaxScaler()
+                self.scaler.data_min_ = scaler_params[0]
+                self.scaler.data_max_ = scaler_params[1]
+                logger.info(f"Scaler loaded from {scaler_path}")
+            else:
+                logger.warning(f"Scaler not found at {scaler_path}, using default scaling")
+                self.scaler = MinMaxScaler()
+            
+            # Get model metadata
+            self.is_multi_step = len(self.model.output_shape) > 2
+            if self.is_multi_step:
+                self.out_steps = self.model.output_shape[1]
+                logger.info(f"Loaded multi-step model with {self.out_steps} output steps")
+            else:
+                self.out_steps = 1
+                logger.info("Loaded single-step model")
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error loading model: {e}")
+            return False
+    
+    def allocate_resources(self, traffic_load, utilization, hour_of_day=None, day_of_week=None, client_count=0.5, bs_count=0.5):
+        """
+        Allocate resources based on ML model predictions.
+        
+        Args:
+            traffic_load (float): Current traffic load
+            utilization (numpy.ndarray): Current utilization of slices
+            hour_of_day (float): Hour of day (0-1)
+            day_of_week (float): Day of week (0-1)
+            client_count (float): Normalized client count
+            bs_count (float): Normalized base station count
+        
+        Returns:
+            numpy.ndarray: Resource allocation for each slice
+        """
+        with self.lock:
+            # Update utilization
+            self.current_utilization = utilization.copy()
+            
+            # If model is not loaded or in emergency mode, use base behavior
+            if self.model is None:
+                logger.warning("Model not loaded, using base allocation strategy")
+                return super().allocate_resources(traffic_load, utilization)
+            
+            # Get current time if not provided
+            if hour_of_day is None or day_of_week is None:
+                now = datetime.now()
+                hour_of_day = now.hour / 24.0
+                day_of_week = now.weekday() / 6.0
+            
+            # Create state dictionary
+            state = {
+                'timestamp': datetime.now(),
+                'traffic_load': traffic_load,
+                'hour_of_day': hour_of_day,
+                'day_of_week': day_of_week,
+                'allocations': self.current_allocation.copy(),
+                'utilizations': utilization.copy(),
+                'client_count': client_count,
+                'bs_count': bs_count,
+                'is_emergency': self.is_emergency
+            }
+            
+            # Add to history
+            self.history.append(state)
+            
+            # Keep only the most recent entries needed for the sequence
+            if len(self.history) > self.config['sequence_length']:
+                self.history = self.history[-self.config['sequence_length']:]
+            
+            # If we don't have enough history, use base behavior
+            if len(self.history) < self.config['sequence_length']:
+                logger.info("Not enough history, using base allocation strategy")
+                return super().allocate_resources(traffic_load, utilization)
+            
+            # Prepare input for model
+            X = self._prepare_model_input()
+            
+            # Get model prediction
+            prediction = self.model.predict(X, verbose=0)
+            
+            # Extract the prediction(s)
+            if self.is_multi_step:
+                # For multi-step models, we have predictions for multiple future steps
+                predictions = prediction[0]  # Shape: [out_steps, 3]
+                
+                # Use a weighted combination of predictions with more weight to near-term
+                weights = np.exp(-0.5 * np.arange(self.out_steps))
+                weights = weights / np.sum(weights)
+                
+                # Weighted average of predictions
+                model_allocation = np.sum(predictions * weights[:, np.newaxis], axis=0)
+            else:
+                # For single-step models, we have one prediction
+                model_allocation = prediction[0]  # Shape: [3]
+            
+            # Apply event-specific adjustments
+            if self.is_emergency:
+                # Increase URLLC allocation during emergencies
+                emergency_allocation = np.array([
+                    self.config['emergency_allocation']['embb'],
+                    self.config['emergency_allocation']['urllc'],
+                    self.config['emergency_allocation']['mmtc']
+                ])
+                
+                # Mix model prediction with emergency allocation
+                final_allocation = 0.3 * model_allocation + 0.7 * emergency_allocation
+            else:
+                # Apply stability factor to avoid rapid changes
+                stability_factor = self.config['stability_factor']
+                final_allocation = stability_factor * self.current_allocation + (1 - stability_factor) * model_allocation
+            
+            # Check for QoS violations and adjust if needed
+            final_allocation = self._adjust_for_qos(final_allocation, utilization)
+            
+            # Ensure allocations are within valid range and sum to 1
+            final_allocation = np.clip(final_allocation, 0.1, 0.8)
+            final_allocation = final_allocation / np.sum(final_allocation)
+            
+            # Update current allocation
+            self.current_allocation = final_allocation
+            
+            return final_allocation
+    
+    def _prepare_model_input(self):
+        """
+        Prepare input sequence for the model.
+        
+        Returns:
+            numpy.ndarray: Model input
+        """
+        # Extract features from history
+        sequence = []
+        for state in self.history:
+            features = [
+                state['traffic_load'],
+                state['hour_of_day'],
+                state['day_of_week'],
+                state['allocations'][0],  # eMBB allocation
+                state['allocations'][1],  # URLLC allocation
+                state['allocations'][2],  # mMTC allocation
+                state['utilizations'][0],  # eMBB utilization
+                state['utilizations'][1],  # URLLC utilization
+                state['utilizations'][2],  # mMTC utilization
+                state['client_count'],
+                state['bs_count']
+            ]
+            sequence.append(features)
+        
+        # Convert to numpy array
+        X = np.array(sequence)
+        
+        # Scale features
+        if self.scaler:
+            X = self.scaler.transform(X)
+        
+        # Reshape for model input [batch_size=1, sequence_length, features]
+        X = X.reshape(1, X.shape[0], X.shape[1])
+        
+        return X
+    
+    def _adjust_for_qos(self, allocation, utilization):
+        """
+        Adjust allocation to prevent QoS violations.
+        
+        Args:
+            allocation (numpy.ndarray): Current allocation
+            utilization (numpy.ndarray): Current utilization
+        
+        Returns:
+            numpy.ndarray: Adjusted allocation
+        """
+        # Get QoS thresholds
+        thresholds = [
+            self.config['qos_thresholds']['embb'],
+            self.config['qos_thresholds']['urllc'],
+            self.config['qos_thresholds']['mmtc']
+        ]
+        
+        # Check for violations and adjust
+        for i, threshold in enumerate(thresholds):
+            # If utilization is above threshold, increase allocation
+            if utilization[i] > threshold:
+                # Calculate how much to increase based on violation severity
+                violation_factor = (utilization[i] - threshold) / threshold
+                increase = min(0.1, violation_factor * 0.2)
+                
+                # Take from the least utilized slices
+                other_indices = [j for j in range(3) if j != i]
+                least_utilized_idx = other_indices[np.argmin(utilization[other_indices])]
+                
+                # Adjust allocations
+                allocation[i] += increase
+                allocation[least_utilized_idx] -= increase
+        
+        return allocation
 
 
 # Example usage
 if __name__ == "__main__":
-    # Create enhanced slice manager
-    slice_manager = EnhancedSliceManager(input_dim=11, sequence_length=10, out_steps=5)
+    # Create slice managers
+    base_manager = BaseSliceManager()
+    proportional_manager = ProportionalSliceManager()
+    enhanced_manager = EnhancedSliceManager(model_path="models/lstm_single")
     
-    # Generate sample data
-    X_train, y_train, X_val, y_val = slice_manager.predictor._generate_training_data(1000)
+    # Test with different traffic loads and utilizations
+    traffic_loads = [0.5, 1.0, 1.5]
+    utilizations = [
+        np.array([0.5, 0.5, 0.5]),  # Equal utilization
+        np.array([1.0, 0.5, 0.2]),  # High eMBB
+        np.array([0.3, 1.2, 0.5])   # High URLLC
+    ]
     
-    # Train model
-    history = slice_manager.train_model(
-        training_data=(X_train, y_train),
-        epochs=50,
-        batch_size=32,
-        validation_split=0.2
-    )
+    # Compare allocations
+    for i, traffic_load in enumerate(traffic_loads):
+        for j, utilization in enumerate(utilizations):
+            print(f"\nScenario {i+1}.{j+1}: Traffic={traffic_load}, Utilization={utilization}")
+            
+            # Base manager
+            base_allocation = base_manager.allocate_resources(traffic_load, utilization)
+            print(f"Base Manager:        eMBB={base_allocation[0]:.2f}, URLLC={base_allocation[1]:.2f}, mMTC={base_allocation[2]:.2f}")
+            
+            # Proportional manager
+            prop_allocation = proportional_manager.allocate_resources(traffic_load, utilization)
+            print(f"Proportional Manager: eMBB={prop_allocation[0]:.2f}, URLLC={prop_allocation[1]:.2f}, mMTC={prop_allocation[2]:.2f}")
+            
+            # Enhanced manager
+            try:
+                enhanced_allocation = enhanced_manager.allocate_resources(traffic_load, utilization)
+                print(f"Enhanced Manager:    eMBB={enhanced_allocation[0]:.2f}, URLLC={enhanced_allocation[1]:.2f}, mMTC={enhanced_allocation[2]:.2f}")
+            except Exception as e:
+                print(f"Enhanced Manager: Error - {e}")
     
-    # Visualize training history
-    slice_manager.predictor.plot_training_history(history)
+    # Test emergency mode
+    print("\nEmergency Mode Test:")
+    base_manager.set_emergency_mode(True)
+    proportional_manager.set_emergency_mode(True)
+    enhanced_manager.set_emergency_mode(True)
     
-    # Make predictions
-    sample_input = X_val[0]
-    sample_output = y_val[0]
+    # Get allocations in emergency mode
+    base_allocation = base_manager.allocate_resources(1.0, np.array([0.5, 0.5, 0.5]))
+    prop_allocation = proportional_manager.allocate_resources(1.0, np.array([0.5, 0.5, 0.5]))
+    try:
+        enhanced_allocation = enhanced_manager.allocate_resources(1.0, np.array([0.5, 0.5, 0.5]))
+        print(f"Enhanced Manager:    eMBB={enhanced_allocation[0]:.2f}, URLLC={enhanced_allocation[1]:.2f}, mMTC={enhanced_allocation[2]:.2f}")
+    except Exception as e:
+        print(f"Enhanced Manager: Error - {e}")
     
-    # Get optimal slice allocation
-    prediction = slice_manager.get_optimal_slice_allocation(sample_input[-1], return_all_steps=True)
-    
-    # Visualize predictions
-    slice_manager.visualize_predictions(sample_input, sample_output)
-    
-    # Save model
-    slice_manager.save_model("models/enhanced_slice_manager_model.h5") 
+    print(f"Base Manager:        eMBB={base_allocation[0]:.2f}, URLLC={base_allocation[1]:.2f}, mMTC={base_allocation[2]:.2f}")
+    print(f"Proportional Manager: eMBB={prop_allocation[0]:.2f}, URLLC={prop_allocation[1]:.2f}, mMTC={prop_allocation[2]:.2f}") 

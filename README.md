@@ -1,49 +1,82 @@
-# 5G Network Slicing with AI Integration
+# 5G Network Slicing Orchestrator Demo
 
-This project implements an AI-enhanced 5G network slicing system, focusing on the interaction between AI agents and existing network functions through Model Context Protocol (MCP).
+This project demonstrates the capabilities of a 5G network slicing orchestrator, which dynamically allocates resources between different network slices based on traffic patterns and network events.
 
-## PoC Objectives
+## Overview
 
-1. Study the use of AI pipelines to build and manage new AI technologies in the network
-2. Demonstrate alternatives and trade-offs for interaction between AI agents and existing, non-AI Native network functions
-3. Validate the hypothesis that using interface protocols (e.g., model context protocol) between agents and the rest of the network significantly reduces migration effort to AI Native networks
+The orchestrator manages three types of network slices:
+
+1. **eMBB (enhanced Mobile Broadband)** - For high-bandwidth applications like video streaming
+2. **URLLC (Ultra-Reliable Low-Latency Communications)** - For applications requiring low latency and high reliability
+3. **mMTC (massive Machine Type Communications)** - For IoT devices and sensors
+
+The demo simulates different network conditions and shows how the orchestrator adapts resource allocation in real-time.
 
 ## Features
 
-- Network simulation with dynamic slice allocation
-- AI-driven traffic forecasting
-- RAG (Retrieval Augmented Generation) for feature-specific inference
-- MCP-based API integration
-- Integration with ITU CG Datasets for traffic forecasting
+- Dynamic resource allocation between network slices
+- Simulation of different network events:
+  - Emergency situations (prioritizes URLLC)
+  - Special events (prioritizes eMBB)
+  - IoT surges (prioritizes mMTC)
+- Real-time visualization of network state
+- QoS violation detection and mitigation
+- Historical data tracking and analysis
 
-## Project Structure
+## Requirements
 
+- Python 3.6+
+- NumPy
+- Matplotlib
+
+## Installation
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/5g-network-slicing.git
+cd 5g-network-slicing
+
+# Install dependencies
+pip install numpy matplotlib
 ```
-.
-├── 5G-Network-Slicing/     # Core network simulation
-│   ├── generate_data.py    # Data generation and simulation
-│   └── slicesim/          # Simulation components
-├── ai_agents/             # AI agent implementations
-├── knowledge_base/        # RAG knowledge base
-└── docs/                 # Documentation
+
+## Usage
+
+Run the demo with default settings:
+
+```bash
+python orchestrator_demo.py
 ```
 
-## Setup
+### Command-line Options
 
-1. Clone the repository
-2. Install dependencies: `pip install -r requirements.txt`
-3. Configure environment variables
-4. Run the simulation
+- `--duration SECONDS` - Run duration in seconds (default: 60)
+- `--interval SECONDS` - Update interval in seconds (default: 1.0)
+- `--emergency` - Simulate emergency situation
+- `--special-event` - Simulate special event
+- `--iot-surge` - Simulate IoT device surge
 
-## PoC Demonstration Scenarios
+### Examples
 
-1. Time-series inference triggering MCP-based APIs to the orchestrator
-2. Knowledge base techniques effectiveness in feature-specific inference
+Simulate a 2-minute emergency situation:
 
-## Contributing
+```bash
+python orchestrator_demo.py --duration 120 --emergency
+```
 
-Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+Simulate a special event with faster updates:
+
+```bash
+python orchestrator_demo.py --special-event --interval 0.5
+```
+
+## Output
+
+The demo creates a directory under `results/` with:
+
+- PNG images showing the network state at each step
+- A JSON file with the complete history of the simulation
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details. 
+MIT 

@@ -1,133 +1,590 @@
-import math
+#!/usr/bin/env python3
+"""
+5G Network Slicing - Utilities Module
+
+This module provides common utility functions for the 5G network slicing system,
+including data processing, visualization, and evaluation metrics.
+"""
+
+import os
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import json
+import logging
+from datetime import datetime
+from sklearn.preprocessing import MinMaxScaler
+import tensorflow as tf
 
-def distance(a, b):
-    """Calculate Euclidean distance between two points"""
-    return math.sqrt(sum((i-j)**2 for i,j in zip(a, b)))
+# Configure logging
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-def format_bps(size, pos=None, return_float=False):
-    """Format bits per second with appropriate unit prefix"""
-    # https://stackoverflow.com/questions/12523586/python-format-size-application-converting-b-to-kb-mb-gb-tb
-    power, n = 1000, 0
-    power_labels = {0 : '', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
-    while size >= power:
-        size /= power
-        n += 1
-    if return_float:
-        return f'{size:.3f} {power_labels[n]}bps'
-    return f'{size:.0f} {power_labels[n]}bps'
 
-class KDTree:
-    """Simple KD-Tree implementation for nearest neighbor search"""
+def setup_directories(dirs):
+    """
+    Create directories if they don't exist.
     
-    def __init__(self, points):
-        """Initialize KD-Tree with points
+    Args:
+        dirs (list): List of directory paths to create
+    
+    Returns:
+        bool: Whether all directories were created successfully
+    """
+    try:
+        for directory in dirs:
+            os.makedirs(directory, exist_ok=True)
+            logger.info(f"Directory created: {directory}")
+        return True
+    except Exception as e:
+        logger.error(f"Error creating directories: {e}")
+        return False
+
+
+def save_json(data, filepath):
+    """
+    Save data to JSON file.
+    
+    Args:
+        data (dict): Data to save
+        filepath (str): Path to save the file
+    
+    Returns:
+        bool: Whether the data was saved successfully
+    """
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
+        
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=4)
+        
+        logger.info(f"Data saved to {filepath}")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving data to {filepath}: {e}")
+        return False
+
+
+def load_json(filepath):
+    """
+    Load data from JSON file.
         
         Args:
-            points (list): List of points [(x1, y1), (x2, y2), ...]
-        """
-        self.points = points
-        self.n = len(points)
-        
-        # Convert to numpy array for faster operations
-        if self.n > 0:
-            self.points_array = np.array(points)
-        else:
-            self.points_array = np.array([])
+        filepath (str): Path to the JSON file
     
-    def query_nearest(self, query_point):
-        """Find index of nearest point to query_point
+    Returns:
+        dict: Loaded data or None if error
+    """
+    try:
+        with open(filepath, 'r') as f:
+            data = json.load(f)
+        
+        logger.info(f"Data loaded from {filepath}")
+        return data
+    except Exception as e:
+        logger.error(f"Error loading data from {filepath}: {e}")
+        return None
+
+
+def generate_traffic_pattern(steps, slice_types=None, base_levels=None, variances=None, 
+                           emergency_factors=None, emergency_steps=None):
+    """
+    Generate synthetic traffic pattern for network slices.
+    
+    Args:
+        steps (int): Number of time steps
+        slice_types (list): List of slice types
+        base_levels (dict): Base traffic level for each slice
+        variances (dict): Variance of traffic for each slice
+        emergency_factors (dict): Traffic multiplier during emergency for each slice
+        emergency_steps (list): List of steps with emergency events
+    
+    Returns:
+        dict: Generated traffic pattern
+    """
+    if slice_types is None:
+        slice_types = ['eMBB', 'URLLC', 'mMTC']
+    
+    if base_levels is None:
+        base_levels = {
+            'eMBB': 0.4,
+            'URLLC': 0.3,
+            'mMTC': 0.2
+        }
+    
+    if variances is None:
+        variances = {
+            'eMBB': 0.2,
+            'URLLC': 0.1,
+            'mMTC': 0.15
+        }
+    
+    if emergency_factors is None:
+        emergency_factors = {
+            'eMBB': 0.8,  # Reduced during emergency
+            'URLLC': 2.0,  # Increased during emergency
+            'mMTC': 0.9   # Slightly reduced during emergency
+        }
+    
+    if emergency_steps is None:
+        # Generate random emergency events
+        emergency_prob = 0.1
+        emergency_steps = [i for i in range(steps) if np.random.random() < emergency_prob]
+    
+    # Generate traffic pattern
+    traffic = {slice_type: np.zeros(steps) for slice_type in slice_types}
+    is_emergency = np.zeros(steps, dtype=bool)
+    
+    # Set emergency steps
+    for step in emergency_steps:
+        if step < steps:
+            is_emergency[step] = True
+    
+    # Generate base pattern with daily and weekly patterns
+    time = np.arange(steps)
+    daily_pattern = 0.2 * np.sin(2 * np.pi * time / 24)  # 24-hour cycle
+    weekly_pattern = 0.1 * np.sin(2 * np.pi * time / (24 * 7))  # Weekly cycle
+    
+    for slice_type in slice_types:
+        # Base level
+        base = base_levels[slice_type]
+        variance = variances[slice_type]
+        
+        # Generate pattern
+        pattern = base + daily_pattern + weekly_pattern
+        
+        # Add random noise
+        noise = np.random.normal(0, variance, steps)
+        pattern += noise
+        
+        # Apply emergency factors
+        for step in range(steps):
+            if is_emergency[step]:
+                pattern[step] *= emergency_factors[slice_type]
+        
+        # Ensure positive values and clip to reasonable range
+        pattern = np.clip(pattern, 0.1, 2.0)
+        
+        # Store in traffic dict
+        traffic[slice_type] = pattern
+    
+    # Create result dictionary
+    result = {
+        'steps': steps,
+        'traffic': traffic,
+        'is_emergency': is_emergency.tolist(),
+        'emergency_steps': emergency_steps
+    }
+    
+    return result
+
+
+def calculate_utilization(traffic, allocation):
+    """
+    Calculate utilization based on traffic and allocation.
+    
+    Args:
+        traffic (numpy.ndarray): Traffic load for each slice
+        allocation (numpy.ndarray): Resource allocation for each slice
+    
+    Returns:
+        numpy.ndarray: Utilization for each slice
+    """
+    # Add small constant to avoid division by zero
+    return traffic / (allocation + 1e-6)
+
+
+def check_qos_violations(utilization, thresholds):
+    """
+    Check for QoS violations based on utilization and thresholds.
         
         Args:
-            query_point (tuple): Query point (x, y)
+        utilization (numpy.ndarray): Utilization for each slice
+        thresholds (numpy.ndarray): QoS thresholds for each slice
             
         Returns:
-            int: Index of nearest point in the original points list
-        """
-        if self.n == 0:
-            return None
-            
-        # Calculate distances to all points
-        query_array = np.array(query_point)
-        if len(query_array.shape) == 1:
-            # Single point query
-            distances = np.sqrt(np.sum((self.points_array - query_array)**2, axis=1))
-            return np.argmin(distances)
-        else:
-            # Multiple point query
-            results = []
-            for q in query_array:
-                distances = np.sqrt(np.sum((self.points_array - q)**2, axis=1))
-                results.append(np.argmin(distances))
-            return results
+        numpy.ndarray: Boolean array indicating violations
+    """
+    return utilization > thresholds
+
+
+def prepare_sequence_data(data, sequence_length, features, target_cols=None):
+    """
+    Prepare sequence data for LSTM model.
     
-    def query_radius(self, query_point, radius):
-        """Find indices of points within radius of query_point
+    Args:
+        data (pandas.DataFrame): Input data
+        sequence_length (int): Length of input sequence
+        features (list): List of feature column names
+        target_cols (list): List of target column names
+    
+    Returns:
+        tuple: (X, y) where X is input sequences and y is target values
+    """
+    X_sequences = []
+    y_values = []
+    
+    # For each possible sequence
+    for i in range(len(data) - sequence_length):
+        # Extract sequence
+        X_sequence = data[features].iloc[i:i+sequence_length].values
+        X_sequences.append(X_sequence)
+        
+        # Extract target (next step after sequence)
+        if target_cols:
+            y_value = data[target_cols].iloc[i+sequence_length].values
+            y_values.append(y_value)
+    
+    X = np.array(X_sequences)
+    
+    if target_cols:
+        y = np.array(y_values)
+        return X, y
+    else:
+        return X
+
+
+def prepare_multi_step_data(data, sequence_length, out_steps, features, target_cols):
+    """
+    Prepare multi-step sequence data for autoregressive LSTM model.
         
         Args:
-            query_point (tuple): Query point (x, y)
-            radius (float): Search radius
+        data (pandas.DataFrame): Input data
+        sequence_length (int): Length of input sequence
+        out_steps (int): Number of output steps
+        features (list): List of feature column names
+        target_cols (list): List of target column names
             
         Returns:
-            list: Indices of points within radius
-        """
-        if self.n == 0:
-            return []
-            
-        # Calculate distances to all points
-        query_array = np.array(query_point)
-        distances = np.sqrt(np.sum((self.points_array - query_array)**2, axis=1))
-        
-        # Return indices of points within radius
-        return np.where(distances <= radius)[0].tolist()
-        
-    # Add static methods for backward compatibility
-    last_run_time = 0
+        tuple: (X, y) where X is input sequences and y is target sequences
+    """
+    X_sequences = []
+    y_sequences = []
     
-    @staticmethod
-    def run(clients, base_stations, run_at, assign=True):
-        """For compatibility with original code"""
-        if run_at == KDTree.last_run_time:
-            return
-        KDTree.last_run_time = run_at
+    # For each possible sequence
+    for i in range(len(data) - sequence_length - out_steps + 1):
+        # Extract input sequence
+        X_sequence = data[features].iloc[i:i+sequence_length].values
+        X_sequences.append(X_sequence)
         
-        c_coor = [(c.x, c.y) for c in clients]
-        bs_coor = [p.coverage.center for p in base_stations]
-
-        # Create tree and query for nearest points
-        tree = KDTree(bs_coor)
-        
-        for i, client in enumerate(clients):
-            # Find nearest base station
-            nearest_idx = tree.query_nearest(c_coor[i])
-            
-            if nearest_idx is not None:
-                nearest_bs = base_stations[nearest_idx]
-                d = distance(c_coor[i], nearest_bs.coverage.center)
-                
-                # Assign client to base station if within coverage
-                if assign and d <= nearest_bs.coverage.radius:
-                    client.base_station = nearest_bs
-                
-                # For compatibility with original code
-                client.closest_base_stations = [(d, nearest_bs)]
-
-# Initial connections using k-d tree
-def kdtree(clients, base_stations):
-    """Connect clients to nearest base stations using KDTree"""
-    c_coor = [(c.x, c.y) for c in clients]
-    bs_coor = [p.coverage.center for p in base_stations]
-
-    tree = KDTree(bs_coor)
+        # Extract target sequence
+        y_sequence = data[target_cols].iloc[i+sequence_length:i+sequence_length+out_steps].values
+        y_sequences.append(y_sequence)
     
-    for i, client in enumerate(clients):
-        # Find nearest base station
-        nearest_idx = tree.query_nearest(c_coor[i])
+    X = np.array(X_sequences)
+    y = np.array(y_sequences)
+    
+    return X, y
+
+
+def visualize_traffic(traffic_data, output_path=None):
+    """
+    Visualize traffic pattern.
+    
+    Args:
+        traffic_data (dict): Traffic data
+        output_path (str): Path to save the visualization
+    """
+    steps = traffic_data['steps']
+    traffic = traffic_data['traffic']
+    is_emergency = traffic_data['is_emergency']
+    
+    # Create figure
+    plt.figure(figsize=(12, 6))
+    
+    # Plot traffic for each slice
+    for slice_type, values in traffic.items():
+        plt.plot(values, label=slice_type)
+    
+    # Highlight emergency periods
+    emergency_ranges = []
+    start = None
+    for i, emergency in enumerate(is_emergency):
+        if emergency and start is None:
+            start = i
+        elif not emergency and start is not None:
+            emergency_ranges.append((start, i))
+            start = None
+    
+    if start is not None:
+        emergency_ranges.append((start, steps))
+    
+    for start, end in emergency_ranges:
+        plt.axvspan(start, end, alpha=0.2, color='red')
+    
+    plt.xlabel('Time Step')
+    plt.ylabel('Traffic Load')
+    plt.title('Network Traffic Pattern')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path)
+        plt.close()
+    else:
+        plt.show()
+
+
+def visualize_allocation_comparison(steps, static_allocation, model_allocation, 
+                                  static_utilization, model_utilization,
+                                  is_emergency=None, output_path=None):
+    """
+    Visualize comparison between static and model-based allocation.
+    
+    Args:
+        steps (int): Number of time steps
+        static_allocation (numpy.ndarray): Static allocation over time
+        model_allocation (numpy.ndarray): Model-based allocation over time
+        static_utilization (numpy.ndarray): Static utilization over time
+        model_utilization (numpy.ndarray): Model-based utilization over time
+        is_emergency (list): Boolean list indicating emergency steps
+        output_path (str): Path to save the visualization
+    """
+    slice_types = ['eMBB', 'URLLC', 'mMTC']
+    colors = ['#FF6B6B', '#45B7D1', '#FFBE0B']
+    
+    # Create figure
+    fig, axes = plt.subplots(3, 2, figsize=(15, 12))
+    
+    # Time steps
+    x = np.arange(steps)
+    
+    # Plot allocations
+    for i, slice_type in enumerate(slice_types):
+        axes[i, 0].plot(x, static_allocation[:, i], label='Static', color='#888888', linestyle='-')
+        axes[i, 0].plot(x, model_allocation[:, i], label='Model', color=colors[i], linestyle='-')
+        axes[i, 0].set_title(f'{slice_type} Allocation')
+        axes[i, 0].set_ylabel('Allocation')
+        axes[i, 0].set_xlabel('Time Step')
+        axes[i, 0].legend()
+        axes[i, 0].grid(True, linestyle='--', alpha=0.7)
+    
+    # Plot utilizations
+    for i, slice_type in enumerate(slice_types):
+        axes[i, 1].plot(x, static_utilization[:, i], label='Static', color='#888888', linestyle='-')
+        axes[i, 1].plot(x, model_utilization[:, i], label='Model', color=colors[i], linestyle='-')
+        axes[i, 1].set_title(f'{slice_type} Utilization')
+        axes[i, 1].set_ylabel('Utilization')
+        axes[i, 1].set_xlabel('Time Step')
+        axes[i, 1].legend()
+        axes[i, 1].grid(True, linestyle='--', alpha=0.7)
+    
+    # Highlight emergency periods if provided
+    if is_emergency:
+        emergency_ranges = []
+        start = None
+        for i, emergency in enumerate(is_emergency):
+            if emergency and start is None:
+                start = i
+            elif not emergency and start is not None:
+                emergency_ranges.append((start, i))
+                start = None
         
-        if nearest_idx is not None:
-            nearest_bs = base_stations[nearest_idx]
-            d = distance(c_coor[i], nearest_bs.coverage.center)
-            
-            # Assign client to base station if within coverage
-            if d <= nearest_bs.coverage.radius:
-                client.base_station = nearest_bs
+        if start is not None:
+            emergency_ranges.append((start, steps))
+        
+        for ax_row in axes:
+            for ax in ax_row:
+                for start, end in emergency_ranges:
+                    ax.axvspan(start, end, alpha=0.2, color='red')
+    
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path)
+        plt.close()
+    else:
+        plt.show()
+
+
+def visualize_qos_violations(steps, static_violations, model_violations, 
+                           is_emergency=None, output_path=None):
+    """
+    Visualize QoS violations comparison.
+    
+    Args:
+        steps (int): Number of time steps
+        static_violations (numpy.ndarray): Static violations over time
+        model_violations (numpy.ndarray): Model-based violations over time
+        is_emergency (list): Boolean list indicating emergency steps
+        output_path (str): Path to save the visualization
+    """
+    slice_types = ['eMBB', 'URLLC', 'mMTC']
+    colors = ['#FF6B6B', '#45B7D1', '#FFBE0B']
+    
+    # Create figure
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+    
+    # Time steps
+    x = np.arange(steps)
+    
+    # Calculate cumulative violations
+    static_cum_violations = np.cumsum(static_violations, axis=0)
+    model_cum_violations = np.cumsum(model_violations, axis=0)
+    
+    # Plot violations per slice
+    for i, slice_type in enumerate(slice_types):
+        ax1.plot(x, static_cum_violations[:, i], label=f'Static {slice_type}', 
+                color=colors[i], linestyle='--')
+        ax1.plot(x, model_cum_violations[:, i], label=f'Model {slice_type}', 
+                color=colors[i], linestyle='-')
+    
+    ax1.set_title('Cumulative QoS Violations by Slice')
+    ax1.set_ylabel('Number of Violations')
+    ax1.set_xlabel('Time Step')
+    ax1.legend()
+    ax1.grid(True, linestyle='--', alpha=0.7)
+    
+    # Plot total violations
+    static_total = np.sum(static_violations, axis=1)
+    model_total = np.sum(model_violations, axis=1)
+    static_cum_total = np.cumsum(static_total)
+    model_cum_total = np.cumsum(model_total)
+    
+    ax2.plot(x, static_cum_total, label='Static Total', color='#888888', linewidth=2)
+    ax2.plot(x, model_cum_total, label='Model Total', color='#2ECC71', linewidth=2)
+    
+    ax2.set_title('Total Cumulative QoS Violations')
+    ax2.set_ylabel('Number of Violations')
+    ax2.set_xlabel('Time Step')
+    ax2.legend()
+    ax2.grid(True, linestyle='--', alpha=0.7)
+    
+    # Highlight emergency periods if provided
+    if is_emergency:
+        emergency_ranges = []
+        start = None
+        for i, emergency in enumerate(is_emergency):
+            if emergency and start is None:
+                start = i
+            elif not emergency and start is not None:
+                emergency_ranges.append((start, i))
+                start = None
+        
+        if start is not None:
+            emergency_ranges.append((start, steps))
+        
+        for ax in [ax1, ax2]:
+            for start, end in emergency_ranges:
+                ax.axvspan(start, end, alpha=0.2, color='red')
+    
+    plt.tight_layout()
+    
+    # Save or show
+    if output_path:
+        plt.savefig(output_path)
+        plt.close()
+    else:
+        plt.show()
+
+
+def evaluate_model(y_true, y_pred):
+    """
+    Evaluate model performance.
+    
+    Args:
+        y_true (numpy.ndarray): True values
+        y_pred (numpy.ndarray): Predicted values
+    
+    Returns:
+        dict: Evaluation metrics
+    """
+    # Mean Absolute Error
+    mae = np.mean(np.abs(y_true - y_pred))
+    
+    # Mean Squared Error
+    mse = np.mean(np.square(y_true - y_pred))
+    
+    # Root Mean Squared Error
+    rmse = np.sqrt(mse)
+    
+    # Mean Absolute Percentage Error
+    # Add small constant to avoid division by zero
+    mape = np.mean(np.abs((y_true - y_pred) / (y_true + 1e-6))) * 100
+    
+    # R-squared
+    ss_total = np.sum(np.square(y_true - np.mean(y_true)))
+    ss_residual = np.sum(np.square(y_true - y_pred))
+    r2 = 1 - (ss_residual / ss_total)
+    
+    return {
+        'mae': float(mae),
+        'mse': float(mse),
+        'rmse': float(rmse),
+        'mape': float(mape),
+        'r2': float(r2)
+    }
+
+
+# Example usage
+if __name__ == "__main__":
+    # Generate traffic pattern
+    traffic_data = generate_traffic_pattern(
+        steps=100,
+        emergency_steps=[20, 21, 22, 23, 24, 60, 61, 62]
+    )
+    
+    # Visualize traffic
+    visualize_traffic(traffic_data, "traffic_example.png")
+    
+    # Create dummy allocation and utilization data
+    steps = traffic_data['steps']
+    static_allocation = np.tile([0.4, 0.3, 0.3], (steps, 1))
+    model_allocation = np.zeros((steps, 3))
+    static_utilization = np.zeros((steps, 3))
+    model_utilization = np.zeros((steps, 3))
+    
+    # Calculate utilization
+    for i in range(steps):
+        traffic_values = np.array([
+            traffic_data['traffic']['eMBB'][i],
+            traffic_data['traffic']['URLLC'][i],
+            traffic_data['traffic']['mMTC'][i]
+        ])
+        
+        # Model allocation changes based on traffic
+        if traffic_data['is_emergency'][i]:
+            model_allocation[i] = [0.2, 0.7, 0.1]  # Emergency allocation
+        else:
+            # Simple adaptive allocation
+            total = np.sum(traffic_values)
+            if total > 0:
+                model_allocation[i] = traffic_values / total
+            else:
+                model_allocation[i] = [0.33, 0.33, 0.34]
+        
+        # Calculate utilization
+        static_utilization[i] = calculate_utilization(traffic_values, static_allocation[i])
+        model_utilization[i] = calculate_utilization(traffic_values, model_allocation[i])
+    
+    # Visualize allocation comparison
+    visualize_allocation_comparison(
+        steps,
+        static_allocation,
+        model_allocation,
+        static_utilization,
+        model_utilization,
+        traffic_data['is_emergency'],
+        "allocation_comparison_example.png"
+    )
+    
+    # Check QoS violations
+    thresholds = np.array([1.5, 1.2, 1.8])
+    static_violations = check_qos_violations(static_utilization, thresholds)
+    model_violations = check_qos_violations(model_utilization, thresholds)
+    
+    # Visualize QoS violations
+    visualize_qos_violations(
+        steps,
+        static_violations,
+        model_violations,
+        traffic_data['is_emergency'],
+        "qos_violations_example.png"
+    )
+    
+    print("Example visualizations created!")

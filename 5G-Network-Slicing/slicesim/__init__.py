@@ -1,14 +1,8 @@
 """
-5G Network Slicing Simulation Package
+5G Network Slicing System
+
+A machine learning-based system for dynamic resource allocation in 5G network slicing.
 """
 
-from .BaseStation import BaseStation
-from .Client import Client
-from .Coverage import Coverage
-from .Distributor import Distributor
-from .Graph import Graph
-from .Slice import Slice
-from .Stats import Stats
-from .utils import format_bps, distance, KDTree
-
 __version__ = '1.0.0'
+__author__ = 'AI Team'
