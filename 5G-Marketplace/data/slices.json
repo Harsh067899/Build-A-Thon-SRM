@@ -765,5 +765,44 @@
     "reliability": 99.95,
     "location": "Tokyo, Japan",
     "cost": 180.0
+  },
+  {
+    "id": "slice-0c88d640",
+    "type": "eMBB",
+    "vendor_id": "vendor-3",
+    "vendor_name": "NextGen Networks",
+    "created_at": "2025-08-12 01:17:28",
+    "status": "active",
+    "latency": 10.0,
+    "bandwidth": 1500.0,
+    "reliability": 99.95,
+    "location": "Tokyo, Japan",
+    "cost": 180.0
+  },
+  {
+    "id": "slice-2555a50c",
+    "type": "eMBB",
+    "vendor_id": "vendor-1",
+    "vendor_name": "TelcoNet Solutions",
+    "created_at": "2025-08-12 13:58:21",
+    "status": "active",
+    "latency": 15.0,
+    "bandwidth": 1000.0,
+    "reliability": 99.9,
+    "location": "New York, USA",
+    "cost": 150.0
+  },
+  {
+    "id": "slice-f46f902c",
+    "type": "eMBB",
+    "vendor_id": "vendor-1",
+    "vendor_name": "TelcoNet Solutions",
+    "created_at": "2025-08-12 15:20:42",
+    "status": "active",
+    "latency": 15.0,
+    "bandwidth": 1000.0,
+    "reliability": 99.9,
+    "location": "New York, USA",
+    "cost": 150.0
   }
 ]

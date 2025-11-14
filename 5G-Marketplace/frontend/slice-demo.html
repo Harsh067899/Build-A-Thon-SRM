@@ -519,6 +519,98 @@
                 <p>Your network slice is now being monitored in real-time.</p>
                 
                 <!-- Monitoring content will be added here -->
+                
+                <!-- NDDT Feedback Loop -->
+                <div class="card mt-4" id="feedbackLoop">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span>Feedback Loop</span>
+                        <span class="badge context7-badge">NDDT Twin</span>
+                    </div>
+                    <div class="card-body">
+                        <p>Help improve the Network Digital Twin by providing feedback on the monitoring data and recommendations.</p>
+                        
+                        <div class="mb-3">
+                            <label for="feedbackAccuracy" class="form-label">How accurate are the metrics compared to your expectations?</label>
+                            <div class="d-flex align-items-center">
+                                <input type="range" class="form-range me-2" id="feedbackAccuracy" min="1" max="5" value="3">
+                                <span id="feedbackAccuracyValue">3/5</span>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="feedbackRecommendations" class="form-label">How helpful are the recommendations?</label>
+                            <div class="d-flex align-items-center">
+                                <input type="range" class="form-range me-2" id="feedbackRecommendations" min="1" max="5" value="3">
+                                <span id="feedbackRecommendationsValue">3/5</span>
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="feedbackComments" class="form-label">Additional comments or observations</label>
+                            <textarea class="form-control" id="feedbackComments" rows="3" placeholder="Share your observations about the slice performance..."></textarea>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="applyFeedback">
+                                <label class="form-check-label" for="applyFeedback">
+                                    Apply this feedback to improve future recommendations
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <button type="button" class="btn btn-primary" id="submitFeedbackBtn">Submit Feedback</button>
+                        
+                        <div class="alert alert-success mt-3" id="feedbackSuccess" style="display: none;">
+                            <i class="bi bi-check-circle-fill"></i> Feedback submitted successfully. The Network Digital Twin will use this information to improve future recommendations.
+                        </div>
+                        
+                        <div class="alert alert-danger mt-3" id="feedbackError" style="display: none;">
+                            Error submitting feedback.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- NDDT Learning Cycle -->
+                <div class="card mt-4" id="learningCycle">
+                    <div class="card-header">
+                        <span>NDDT Learning Cycle</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-center">
+                            <div class="learning-cycle-diagram">
+                                <div class="cycle-step" id="cycleMonitor">
+                                    <i class="bi bi-graph-up-arrow"></i>
+                                    <span>Monitor</span>
+                                </div>
+                                <div class="cycle-arrow">→</div>
+                                <div class="cycle-step" id="cycleAnalyze">
+                                    <i class="bi bi-search"></i>
+                                    <span>Analyze</span>
+                                </div>
+                                <div class="cycle-arrow">→</div>
+                                <div class="cycle-step" id="cycleRecommend">
+                                    <i class="bi bi-lightbulb"></i>
+                                    <span>Recommend</span>
+                                </div>
+                                <div class="cycle-arrow">→</div>
+                                <div class="cycle-step" id="cycleFeedback">
+                                    <i class="bi bi-chat-square-text"></i>
+                                    <span>Feedback</span>
+                                </div>
+                                <div class="cycle-arrow">→</div>
+                                <div class="cycle-step" id="cycleLearn">
+                                    <i class="bi bi-cpu"></i>
+                                    <span>Learn</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="text-center mt-3">
+                            <p class="mb-1"><strong>Current Active Phase: <span id="activePhase">Monitor</span></strong></p>
+                            <p class="text-muted">The Network Digital Twin continuously cycles through these phases to improve performance.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="mt-4">
