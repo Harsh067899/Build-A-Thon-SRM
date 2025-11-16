@@ -74,9 +74,6 @@ def get_slices():
     except:
         return {"slices": []}
 
-# Vercel serverless handler
-handler = Mangum(app)
-
 # Request models
 class SliceTypeRequest(BaseModel):
     text: str
