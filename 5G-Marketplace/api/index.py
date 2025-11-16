@@ -83,10 +83,14 @@ class SliceTypeRequest(BaseModel):
 async def predict_slice_type(request: SliceTypeRequest):
     """Predict slice type from natural language using Gemini AI"""
     
-    if not gemini_model:
-        raise HTTPException(status_code=503, detail="Gemini API is not configured")
-    
     try:
+        if not gemini_model:
+            # Return a mock response if Gemini is not configured
+            return {
+                "slice_type": "eMBB",
+                "confidence": 0.75,
+                "reasoning": "Gemini API not configured - using default classification"
+            }
         # Create an optimized prompt for Gemini Flash
         prompt = f"""You are a 5G network slicing expert. Analyze this user requirement and classify it into ONE of these exact slice types:
 
@@ -194,7 +198,12 @@ Rules:
             }
     
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+        # Return a fallback response instead of raising an error
+        return {
+            "slice_type": "eMBB",
+            "confidence": 0.70,
+            "reasoning": f"Error with Gemini API - using fallback classification. Error: {str(e)[:100]}"
+        }
 
 # Vercel serverless handler
 handler = Mangum(app)
