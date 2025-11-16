@@ -10,7 +10,7 @@ import google.generativeai as genai
 app = FastAPI(title="5G Marketplace API - Vercel")
 
 # Configure Gemini API (Using FREE tier model - gemini-2.5-flash)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyC9OBTt36JehrYA6UYQMpBc6PUbIEP7JF0")
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
     # Use gemini-2.5-flash - Completely FREE with 1500 requests/day

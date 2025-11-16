@@ -1,10 +1,10 @@
 // 5G Marketplace Dashboard JavaScript
 
-// API Base URL
-const API_BASE_URL = 'http://localhost:8001/api';
+// API Base URL - Use relative path for Vercel deployment
+const API_BASE_URL = '/api';
 
 // Gemini API Key
-const GEMINI_API_KEY = 'AIzaSyBMNwnCU_B9xcmpAOSHuzyasUxn4G7JxOo';
+// const GEMINI_API_KEY = 'AIzaSyBMNwnCU_B9xcmpAOSHuzyasUxn4G7JxOo';
 
 // DOM Elements
 const elements = {
