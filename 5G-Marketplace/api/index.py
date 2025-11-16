@@ -5,18 +5,28 @@ from pydantic import BaseModel
 import json
 import os
 import re
-import google.generativeai as genai
+
+# Try to import Gemini - if it fails, use fallback
+try:
+    import google.generativeai as genai
+    GEMINI_AVAILABLE = True
+except Exception as e:
+    GEMINI_AVAILABLE = False
+    print(f"Gemini import failed: {e}")
 
 app = FastAPI(title="5G Marketplace API - Vercel")
 
 # Configure Gemini API (Using FREE tier model - gemini-2.5-flash)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyC9OBTt36JehrYA6UYQMpBc6PUbIEP7JF0")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    # Use gemini-2.5-flash - Completely FREE with 1500 requests/day
-    gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-else:
-    gemini_model = None
+gemini_model = None
+if GEMINI_AVAILABLE:
+    try:
+        GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyC9OBTt36JehrYA6UYQMpBc6PUbIEP7JF0")
+        if GEMINI_API_KEY:
+            genai.configure(api_key=GEMINI_API_KEY)
+            # Use gemini-2.5-flash - Completely FREE with 1500 requests/day
+            gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+    except Exception as e:
+        print(f"Gemini configuration failed: {e}")
 
 # CORS
 app.add_middleware(
@@ -80,11 +90,12 @@ class SliceTypeRequest(BaseModel):
 
 # AI-Powered Slice Type Prediction using Gemini
 @app.post("/api/slice-selection/predict-slice-type")
-async def predict_slice_type(request: SliceTypeRequest):
+def predict_slice_type(request: SliceTypeRequest):  # Changed from async def to def
     """Predict slice type from natural language using Gemini AI"""
     
+    # Top-level protection
     try:
-        if not gemini_model:
+        if not gemini_model or not GEMINI_AVAILABLE:
             # Return a mock response if Gemini is not configured
             return {
                 "slice_type": "eMBB",
@@ -127,11 +138,19 @@ Rules:
             "max_output_tokens": 200,
         }
         
-        response = gemini_model.generate_content(
-            prompt,
-            generation_config=generation_config
-        )
-        response_text = response.text.strip()
+        try:
+            response = gemini_model.generate_content(
+                prompt,
+                generation_config=generation_config
+            )
+            response_text = response.text.strip()
+        except Exception as gen_error:
+            # If Gemini call fails, return immediate fallback
+            return {
+                "slice_type": "eMBB",
+                "confidence": 0.65,
+                "reasoning": f"Gemini API call failed: {str(gen_error)[:100]}"
+            }
         
         # Try to extract JSON from response
         # Remove markdown code blocks if present
@@ -203,6 +222,14 @@ Rules:
             "slice_type": "eMBB",
             "confidence": 0.70,
             "reasoning": f"Error with Gemini API - using fallback classification. Error: {str(e)[:100]}"
+        }
+    
+    except Exception as outer_e:
+        # Absolute failsafe
+        return {
+            "slice_type": "eMBB",
+            "confidence": 0.60,
+            "reasoning": f"Critical error in endpoint. Error: {str(outer_e)[:150]}"
         }
 
 # Vercel serverless handler
