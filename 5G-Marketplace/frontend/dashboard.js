@@ -1,7 +1,9 @@
 // 5G Marketplace Dashboard JavaScript
 
-// API Base URL - Use relative path for Vercel deployment
-const API_BASE_URL = '/api';
+// API Base URL - Auto-detect environment
+const API_BASE_URL = window.location.hostname === 'localhost' 
+    ? 'http://localhost:8001/api'  // Local development: use API server on port 8001
+    : '/api';  // Vercel: use relative path
 
 // Gemini API Key
 // const GEMINI_API_KEY = 'AIzaSyBMNwnCU_B9xcmpAOSHuzyasUxn4G7JxOo';
