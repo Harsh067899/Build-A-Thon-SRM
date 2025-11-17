@@ -298,14 +298,24 @@ async function predictSliceWithGemini(userInput) {
     let sliceType = null;
     let confidence = 0.8;
     try {
+        // attempt strict JSON parse first
         const parsed = JSON.parse(text);
         sliceType = parsed.slice_type || parsed.sliceType || null;
         if (typeof parsed.confidence === 'number') confidence = parsed.confidence;
-    } catch (e) {
-        const upper = text.toUpperCase();
-        if (upper.includes('URLLC')) sliceType = 'URLLC';
-        else if (upper.includes('MMTC')) sliceType = 'mMTC';
-        else sliceType = 'eMBB';
+    } catch (strictErr) {
+        // try to extract JSON embedded in markdown/prose
+        const extracted = extractJson(text);
+        if (extracted) {
+            sliceType = extracted.slice_type || extracted.sliceType || null;
+            if (typeof extracted.confidence === 'number') confidence = extracted.confidence;
+        }
+        // fallback to keyword heuristic
+        if (!sliceType) {
+            const upper = text.toUpperCase();
+            if (upper.includes('URLLC')) sliceType = 'URLLC';
+            else if (upper.includes('MMTC')) sliceType = 'mMTC';
+            else sliceType = 'eMBB';
+        }
     }
     if (!sliceType) sliceType = 'eMBB';
     return { sliceType, confidence };

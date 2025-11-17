@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from mangum import Mangum
 import json
 import os
@@ -61,6 +62,21 @@ def get_slices():
         return {"slices": slices}
     except:
         return {"slices": []}
+
+@app.get("/api/env.js")
+def env_js():
+    key = os.getenv("GEMINI_API_KEY", "")
+    serialized = json.dumps(key)
+    script = (
+        "window.ENV=window.ENV||{};"
+        f"window.ENV.GEMINI_API_KEY={serialized};"
+        f"try{{localStorage.setItem('geminiApiKey',{serialized});}}catch(e){{}}"
+    )
+    return Response(
+        content=script,
+        media_type="application/javascript",
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"}
+    )
 
 # Vercel serverless handler
 handler = Mangum(app)
