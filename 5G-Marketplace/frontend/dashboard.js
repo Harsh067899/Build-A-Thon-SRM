@@ -265,6 +265,52 @@ async function fetchVendors() {
     }
 }
 
+function getGeminiApiKey() {
+    return (window.ENV && window.ENV.GEMINI_API_KEY) || window.GEMINI_API_KEY || localStorage.getItem('geminiApiKey') || null;
+}
+
+async function predictSliceWithGemini(userInput) {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) throw new Error('Missing Gemini API key');
+    const prompt = `You are a 5G network slice classifier. Based on the user's plain-English requirements, classify the need as one of: eMBB, URLLC, or mMTC. Respond ONLY as pure JSON with keys: "slice_type" (one of eMBB, URLLC, mMTC) and "confidence" (0-1).\n\nRequirements: ${userInput}`;
+    const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey
+        },
+        body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+                temperature: 0,
+                maxOutputTokens: 256
+            }
+        })
+    });
+    if (!response.ok) {
+        const t = await response.text();
+        throw new Error(`Gemini API error: ${response.status} - ${t}`);
+    }
+    const data = await response.json();
+    let text = data && data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts[0].text;
+    if (!text) throw new Error('Unexpected Gemini API response');
+    text = text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+    let sliceType = null;
+    let confidence = 0.8;
+    try {
+        const parsed = JSON.parse(text);
+        sliceType = parsed.slice_type || parsed.sliceType || null;
+        if (typeof parsed.confidence === 'number') confidence = parsed.confidence;
+    } catch (e) {
+        const upper = text.toUpperCase();
+        if (upper.includes('URLLC')) sliceType = 'URLLC';
+        else if (upper.includes('MMTC')) sliceType = 'mMTC';
+        else sliceType = 'eMBB';
+    }
+    if (!sliceType) sliceType = 'eMBB';
+    return { sliceType, confidence };
+}
+
 // AI Prompt Handling
 async function handleAIPrompt() {
     // Get the user input
@@ -385,7 +431,83 @@ async function handleAIPrompt() {
         }
     } catch (error) {
         console.error('Error predicting slice type:', error);
-        showAIResponse('error', 'Failed to process your request. Please try again later.');
+        try {
+            const fallback = await predictSliceWithGemini(userInput);
+            if (fallback && fallback.sliceType) {
+                const sliceType = fallback.sliceType;
+                const confidence = typeof fallback.confidence === 'number' ? fallback.confidence : 0.8;
+                const confidencePercent = (confidence * 100).toFixed(1);
+                let sliceInfo = '';
+                let sliceColor = '';
+                let sliceIcon = '';
+                switch (sliceType.toLowerCase()) {
+                    case 'embb':
+                        sliceInfo = 'Enhanced Mobile Broadband (eMBB) is designed for high-bandwidth applications like video streaming, augmented reality, and virtual reality.';
+                        sliceColor = 'primary';
+                        sliceIcon = 'bi-display';
+                        break;
+                    case 'urllc':
+                        sliceInfo = 'Ultra-Reliable Low-Latency Communications (URLLC) is designed for applications requiring extremely low latency and high reliability, such as autonomous vehicles, industrial automation, and remote surgery.';
+                        sliceColor = 'danger';
+                        sliceIcon = 'bi-lightning';
+                        break;
+                    case 'mmtc':
+                        sliceInfo = 'Massive Machine Type Communications (mMTC) is designed for IoT applications with a large number of connected devices, such as smart cities, smart agriculture, and environmental monitoring.';
+                        sliceColor = 'success';
+                        sliceIcon = 'bi-grid-3x3';
+                        break;
+                    default:
+                        sliceInfo = 'This slice type is specialized for your specific requirements.';
+                        sliceColor = 'info';
+                        sliceIcon = 'bi-hdd-network';
+                }
+                const responseHTML = `
+                    <div class="card border-0 bg-${sliceColor} text-white">
+                        <div class="card-header bg-${sliceColor} border-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0"><i class="bi ${sliceIcon} me-2"></i>Recommended Slice Type</h5>
+                                <div class="confidence-badge">
+                                    ${confidencePercent}% confidence
+                                </div>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-3 text-center mb-3 mb-md-0">
+                                    <div class="slice-type-icon">
+                                        <i class="bi ${sliceIcon} display-1"></i>
+                                    </div>
+                                    <h2 class="mt-2">${sliceType.toUpperCase()}</h2>
+                                </div>
+                                <div class="col-md-9">
+                                    <p class="lead">${sliceInfo}</p>
+                                    <div class="d-flex align-items-center mt-3">
+                                        <div class="progress flex-grow-1 me-3" style="height: 10px;">
+                                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-light" 
+                                                 role="progressbar" style="width: 100%"></div>
+                                        </div>
+                                        <div class="text-center">
+                                            <p class="mb-0"><i class="bi bi-arrow-right-circle-fill me-1"></i> Redirecting to best vendor...</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                showAIResponse('success', responseHTML);
+                setTimeout(() => {
+                    localStorage.setItem('selectedSliceType', sliceType);
+                    localStorage.setItem('skipToVendors', 'true');
+                    window.location.href = 'slice-demo.html';
+                }, 3000);
+            } else {
+                showAIResponse('error', 'Failed to process your request. Please try again later.');
+            }
+        } catch (fallbackError) {
+            console.error('Gemini fallback failed:', fallbackError);
+            showAIResponse('error', 'Failed to process your request. Please try again later.');
+        }
     } finally {
         // Hide loading spinner
         elements.aiSpinner.style.display = 'none';
